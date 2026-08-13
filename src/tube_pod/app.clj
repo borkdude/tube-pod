@@ -97,12 +97,11 @@
       (fs/delete file)
       (sync!))))
 
-;; `playing` is marked `^:server`, so it is substituted rather than bound in the
-;; browser. As an ordinary parameter the atom would land in browser scope and be
-;; shipped back as an rpc argument.
-(defpart episode-row [{:keys [id title author duration added]} current ^:server playing]
+;; `playing` is an ordinary parameter here: the atom is browser state, made by
+;; `(client nil)` in `admin`, so setting it redraws without asking the server.
+(defpart episode-row [{:keys [id title author duration added]} current playing]
   [:li.episode {:key id :class (when (= id current) "playing")}
-   [:button.play {:on-click (fn [_] (server (reset! playing (client id))))} "▶"]
+   [:button.play {:on-click (fn [_] (reset! playing id))} "▶"]
    [:div.meta
     [:span.title title]
     [:span.sub author " · " duration " · " added]]
@@ -115,11 +114,12 @@
    (when error
      [:button.del {:on-click (fn [_] (server (dismiss! (client id))))} "×"])])
 
-(defui admin [playing]
+(defui admin []
   (let [episodes (server (:library @state))
         running  (server (mapv (fn [[id j]] (assoc j :id id)) (:jobs @state)))
         total    (server (count (:library @state)))
-        current  (server @playing)]
+        playing  (client nil)
+        current  @playing]
     [:div
      [:h1 "tube-pod"]
      [:input.add {:placeholder "youtube url, then Enter"
@@ -145,8 +145,7 @@
   (split/handler {:index "public/index.html"
                   :watch [state]
                   :mounts [{:el "app"
-                            :state (fn [] {:playing (atom nil)})
-                            :component (fn [{:keys [playing]}] (admin playing))}]}))
+                            :component (fn [_] (admin))}]}))
 
 ;; The panel takes the routes it owns, the feed and the audio come from
 ;; http-server, and this decides the order.
