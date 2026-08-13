@@ -147,10 +147,15 @@
                  :mounts [{:el "app"
                            :component (fn [_] (admin))}]}))
 
-;; The panel takes the routes it owns, the feed and the audio come from
-;; http-server, and this decides the order.
+;; The panel takes the routes it owns, and the feed and the audio come from
+;; http-server. `files` serves the working directory, so it gets only these two
+;; paths. Without the check it also hands out src, bb.edn and .git.
+(def ^:private public-path #"/(feed\.xml|audio/[^/]+\.m4a)")
+
 (defn app [req]
-  (or (ui req) (files req)))
+  (or (ui req)
+      (when (re-matches public-path (:uri req)) (files req))
+      {:status 404 :body "not found"}))
 
 (defn -main [& args]
   (sync!)
