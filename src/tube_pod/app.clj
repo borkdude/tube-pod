@@ -10,8 +10,9 @@
 
 (def base-url (or (System/getenv "TUBE_POD_URL") "http://10.0.1.11:8088"))
 
-(defonce library (atom []))   ; episodes on disk, newest first
-(defonce jobs (atom {}))      ; id -> {:url :status :error}
+(defonce state
+  (atom {:library []    ; episodes on disk, newest first
+         :jobs {}}))   ; id -> {:url :status :error}
 
 ;; http-server is http-kit too, and its router is an ordinary Ring handler that
 ;; already does Range requests, which podcast clients and <audio> both need.
@@ -42,7 +43,7 @@
   "ffprobe is slow enough to be worth doing once per change rather than per
   render, so the library is cached and the feed rewritten at the same time."
   []
-  (reset! library (mapv episode (feed/files)))
+  (swap! state assoc :library (mapv episode (feed/files)))
   (feed/write! base-url))
 
 ;; yt-dlp is given its arguments as a vector and the url after `--`, so nothing
@@ -58,7 +59,7 @@
   (let [url (str/trim (str url))]
     (when (re-matches #"https?://\S+" url)
       (let [id (str (random-uuid))]
-        (swap! jobs assoc id {:url url :status "starting"})
+        (swap! state assoc-in [:jobs id] {:url url :status "starting"})
         (future
           (try
             ;; Prefer a format that is already m4a. `-x --audio-format m4a`
@@ -72,19 +73,20 @@
               (with-open [rdr (io/reader (:out proc))]
                 (doseq [line (line-seq rdr)]
                   (when-let [p (progress line)]
-                    (swap! jobs assoc-in [id :status] p))))
+                    (swap! state assoc-in [:jobs id :status] p))))
               (let [{:keys [exit err]} @proc]
                 (if (zero? exit)
-                  (do (swap! jobs dissoc id)
+                  (do (swap! state update :jobs dissoc id)
                       (sync!))
-                  (swap! jobs assoc id {:url url
-                                        :status "failed"
-                                        :error (last (remove str/blank? (str/split-lines (str err))))}))))
+                  (swap! state assoc-in [:jobs id]
+                         {:url url
+                          :status "failed"
+                          :error (last (remove str/blank? (str/split-lines (str err))))}))))
             (catch Exception e
-              (swap! jobs assoc id {:url url :status "failed" :error (ex-message e)}))))))))
+              (swap! state assoc-in [:jobs id] {:url url :status "failed" :error (ex-message e)}))))))))
 
 (defn dismiss! [id]
-  (swap! jobs dissoc id))
+  (swap! state update :jobs dissoc id))
 
 (defn delete!
   "Removes one episode and its file. The id arrives from the browser, so the
@@ -118,9 +120,9 @@
      [:button.del {:on-click (fn [_] (server (dismiss! id)))} "×"])])
 
 (defsplit admin [playing]
-  (let [episodes (server @library)
-        running  (server (mapv (fn [[id j]] (assoc j :id id)) @jobs))
-        total    (server (count @library))
+  (let [episodes (server (:library @state))
+        running  (server (mapv (fn [[id j]] (assoc j :id id)) (:jobs @state)))
+        total    (server (count (:library @state)))
         current  (server @playing)]
     [:div
      [:h1 "tube-pod"]
@@ -150,7 +152,7 @@
                  :routes routes
                  ;; the library and the download queue are shared, what is
                  ;; playing belongs to whoever opened the panel
-                 :watch [library jobs]
+                 :watch [state]
                  :mounts [{:el "app"
                            :state (fn [] {:playing (atom nil)})
                            :component (fn [{:keys [playing]}] (admin playing))}]}))
