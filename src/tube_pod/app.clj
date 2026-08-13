@@ -12,7 +12,6 @@
 
 (defonce library (atom []))   ; episodes on disk, newest first
 (defonce jobs (atom {}))      ; id -> {:url :status :error}
-(defonce playing (atom nil))  ; episode id the panel is playing
 
 ;; http-server is http-kit too, and its router is an ordinary Ring handler that
 ;; already does Range requests, which podcast clients and <audio> both need.
@@ -98,11 +97,14 @@
       (fs/delete file)
       (sync!))))
 
-(defn play! [id] (reset! playing id))
-
+;; `playing` is not a parameter here. A part's parameters are client values, so
+;; passing the atom would bind it in the browser and ship it back. Server things
+;; are reached by name instead, from the scope this gets spliced into, which is
+;; `admin` below.
+#_{:clj-kondo/ignore [:unresolved-symbol]}
 (defpart episode-row [{:keys [id title author duration added]} current]
   [:li.episode {:key id :class (when (= id current) "playing")}
-   [:button.play {:on-click (fn [_] (server (play! id)))} "▶"]
+   [:button.play {:on-click (fn [_] (server (reset! playing id)))} "▶"]
    [:div.meta
     [:span.title title]
     [:span.sub author " · " duration " · " added]]
@@ -115,7 +117,7 @@
    (when error
      [:button.del {:on-click (fn [_] (server (dismiss! id)))} "×"])])
 
-(defsplit admin []
+(defsplit admin [playing]
   (let [episodes (server @library)
         running  (server (mapv (fn [[id j]] (assoc j :id id)) @jobs))
         total    (server (count @library))
@@ -146,5 +148,9 @@
   (split/start! {:port 8088
                  :nrepl (when (some #{"--nrepl"} args) 1667)
                  :routes routes
-                 :watch [library jobs playing]
-                 :mounts [{:el "app" :component (fn [_] (admin))}]}))
+                 ;; the library and the download queue are shared, what is
+                 ;; playing belongs to whoever opened the panel
+                 :watch [library jobs]
+                 :mounts [{:el "app"
+                           :state (fn [] {:playing (atom nil)})
+                           :component (fn [{:keys [playing]}] (admin playing))}]}))
