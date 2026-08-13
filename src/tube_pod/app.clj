@@ -1,0 +1,150 @@
+(ns tube-pod.app
+  (:require [babashka.fs :as fs]
+            [babashka.http-server :as http-server]
+            [babashka.process :as p]
+            [clojure.java.io :as io]
+            [clojure.string :as str]
+            [split.core :refer [defpart defsplit server]]
+            [split.server :as split]
+            [tube-pod.feed :as feed]))
+
+(def base-url (or (System/getenv "TUBE_POD_URL") "http://10.0.1.11:8088"))
+
+(defonce library (atom []))   ; episodes on disk, newest first
+(defonce jobs (atom {}))      ; id -> {:url :status :error}
+(defonce playing (atom nil))  ; episode id the panel is playing
+
+;; http-server is http-kit too, and its router is an ordinary Ring handler that
+;; already does Range requests, which podcast clients and <audio> both need.
+;; Reaching through the var because it is private: making `file-router` public
+;; would turn this into a plain call.
+(def ^:private files
+  (#'http-server/file-router (fs/path ".") {}))
+
+(defn routes [req]
+  (when (re-matches #"/(feed\.xml|audio/.+)" (:uri req))
+    (files req)))
+
+(defn- added [file]
+  (-> (fs/last-modified-time file)
+      .toInstant
+      (.atZone (java.time.ZoneId/systemDefault))
+      (.format (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd HH:mm"))))
+
+(defn- episode [file]
+  (let [{:keys [tags duration]} (feed/probe file)]
+    {:id       (str (fs/strip-ext (fs/file-name file)))
+     :title    (:title tags)
+     :author   (:artist tags)
+     :duration (feed/hms duration)
+     :added    (added file)}))
+
+(defn sync!
+  "ffprobe is slow enough to be worth doing once per change rather than per
+  render, so the library is cached and the feed rewritten at the same time."
+  []
+  (reset! library (mapv episode (feed/files)))
+  (feed/write! base-url))
+
+;; yt-dlp is given its arguments as a vector and the url after `--`, so nothing
+;; typed into the browser can become a flag or reach a shell.
+
+(defn- progress [line]
+  (cond
+    (re-find #"(\d+\.\d)%" line) (str (second (re-find #"(\d+\.\d)%" line)) "%")
+    (str/includes? line "[ExtractAudio]") "converting"
+    (str/includes? line "Destination") "downloading"))
+
+(defn add! [url]
+  (let [url (str/trim (str url))]
+    (when (re-matches #"https?://\S+" url)
+      (let [id (str (random-uuid))]
+        (swap! jobs assoc id {:url url :status "starting"})
+        (future
+          (try
+            ;; Prefer a format that is already m4a. `-x --audio-format m4a`
+            ;; picks opus and re-encodes, which is slower, and the opus urls
+            ;; currently come back 403.
+            (let [proc (p/process ["yt-dlp" "-f" "bestaudio[ext=m4a]/bestaudio"
+                                   "--embed-metadata" "--no-playlist" "--newline"
+                                   "-o" (str feed/audio-dir "/%(id)s.%(ext)s")
+                                   "--" url]
+                                  {:out :stream :err :string})]
+              (with-open [rdr (io/reader (:out proc))]
+                (doseq [line (line-seq rdr)]
+                  (when-let [p (progress line)]
+                    (swap! jobs assoc-in [id :status] p))))
+              (let [{:keys [exit err]} @proc]
+                (if (zero? exit)
+                  (do (swap! jobs dissoc id)
+                      (sync!))
+                  (swap! jobs assoc id {:url url
+                                        :status "failed"
+                                        :error (last (remove str/blank? (str/split-lines (str err))))}))))
+            (catch Exception e
+              (swap! jobs assoc id {:url url :status "failed" :error (ex-message e)}))))))))
+
+(defn dismiss! [id]
+  (swap! jobs dissoc id))
+
+(defn delete!
+  "Removes one episode and its file. The id arrives from the browser, so the
+  path it produces has to be checked to be inside the audio directory."
+  [id]
+  (let [root (fs/canonicalize feed/audio-dir)
+        file (fs/path feed/audio-dir (str id ".m4a"))]
+    (when (and (fs/exists? file)
+               (fs/starts-with? (fs/canonicalize file) root))
+      (fs/delete file)
+      (sync!))))
+
+(defn play! [id] (reset! playing id))
+
+(defpart episode-row [{:keys [id title author duration added]} current]
+  [:li.episode {:key id :class (when (= id current) "playing")}
+   [:button.play {:on-click (fn [_] (server (play! id)))} "▶"]
+   [:div.meta
+    [:span.title title]
+    [:span.sub author " · " duration " · " added]]
+   [:button.del {:on-click (fn [_] (server (delete! id)))} "×"]])
+
+(defpart job-row [{:keys [id url status error]}]
+  [:li.job {:key id}
+   [:span.status status]
+   [:span.sub (or error url)]
+   (when error
+     [:button.del {:on-click (fn [_] (server (dismiss! id)))} "×"])])
+
+(defsplit admin []
+  (let [episodes (server @library)
+        running  (server (mapv (fn [[id j]] (assoc j :id id)) @jobs))
+        total    (server (count @library))
+        current  (server @playing)]
+    [:div
+     [:h1 "tube-pod"]
+     [:input.add {:placeholder "youtube url, then Enter"
+                  :autofocus true
+                  :on-key-down (fn [e]
+                                 (when (= "Enter" (.-key e))
+                                   (let [v (.. e -target -value)]
+                                     (server (add! v))
+                                     (set! (.. e -target -value) ""))))}]
+     ;; `when` renders nil as a placeholder node rather than nothing, so the
+     ;; player keeps its position and a patch elsewhere does not disturb it.
+     (when current
+       [:audio.player {:src (str "/audio/" current ".m4a")
+                       :controls true
+                       :autoplay true}])
+     (when (seq running)
+       [:ul.jobs (for [j running] (job-row j))])
+     [:p.count total " episodes · " [:a {:href "/feed.xml"} "feed.xml"]]
+     [:ul.episodes (for [ep episodes] (episode-row ep current))]]))
+
+(defn -main [& args]
+  (sync!)
+  (println (str "feed: " base-url "/feed.xml"))
+  (split/start! {:port 8088
+                 :nrepl (when (some #{"--nrepl"} args) 1667)
+                 :routes routes
+                 :watch [library jobs playing]
+                 :mounts [{:el "app" :component (fn [_] (admin))}]}))

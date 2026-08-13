@@ -1,0 +1,8 @@
+# downloaded media and the feed built from it
+audio/
+feed.xml
+
+.clj-kondo/.cache
+.cpcache/
+.lsp/
+.claude/

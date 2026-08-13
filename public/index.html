@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>tube-pod</title>
+    <style nonce="NONCE">
+      body { font: 15px/1.5 system-ui, sans-serif; max-width: 42rem; margin: 3rem auto; padding: 0 1rem; }
+      h1 { font-size: 1.3rem; }
+      ul { list-style: none; padding: 0; }
+      .add { width: 100%; padding: .6rem; font: inherit; box-sizing: border-box; }
+      .episode, .job { display: flex; align-items: center; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid #eee; }
+      .meta { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+      .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sub { color: #777; font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .job { gap: .5rem; }
+      .status { font-variant-numeric: tabular-nums; min-width: 6rem; color: #0a7; }
+      .jobs { border-left: 3px solid #0a7; padding-left: .75rem; margin: 1rem 0; }
+      .count { color: #777; font-size: .85rem; }
+      .del { border: 0; background: none; cursor: pointer; font-size: 1.2rem; color: #999; }
+      .del:hover { color: #c00; }
+      .play { border: 0; background: none; cursor: pointer; font-size: 1rem; color: #0a7; padding: 0; }
+      .episode.playing .title { font-weight: 600; }
+      .player { width: 100%; margin: 1rem 0; }
+    </style>
+  </head>
+  <body>
+    <div id="app"><!--app--></div>
+    <script nonce="NONCE">window.ssrProbe = {root: document.querySelector('#app > div')};</script>
+    <script type="importmap" nonce="NONCE">
+      {"imports": {"squint-cljs/core.js": "https://esm.sh/squint-cljs@0.14.208/core.js"}}
+    </script>
+    <script type="module" src="/client.mjs"></script>
+  </body>
+</html>
