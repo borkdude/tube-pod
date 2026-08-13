@@ -6,7 +6,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [org.httpkit.server :as http]
-            [split.core :refer [defpart defui server]]
+            [split.core :refer [client defpart defui server]]
             [split.server :as split]
             [tube-pod.feed :as feed]))
 
@@ -102,18 +102,18 @@
 ;; shipped back as an rpc argument.
 (defpart episode-row [{:keys [id title author duration added]} current ^:server playing]
   [:li.episode {:key id :class (when (= id current) "playing")}
-   [:button.play {:on-click (fn [_] (server (reset! playing id)))} "▶"]
+   [:button.play {:on-click (fn [_] (server (reset! playing (client id))))} "▶"]
    [:div.meta
     [:span.title title]
     [:span.sub author " · " duration " · " added]]
-   [:button.del {:on-click (fn [_] (server (delete! id)))} "×"]])
+   [:button.del {:on-click (fn [_] (server (delete! (client id))))} "×"]])
 
 (defpart job-row [{:keys [id url status error]}]
   [:li.job {:key id}
    [:span.status status]
    [:span.sub (or error url)]
    (when error
-     [:button.del {:on-click (fn [_] (server (dismiss! id)))} "×"])])
+     [:button.del {:on-click (fn [_] (server (dismiss! (client id))))} "×"])])
 
 (defui admin [playing]
   (let [episodes (server (:library @state))
@@ -126,9 +126,8 @@
                   :autofocus true
                   :on-key-down (fn [e]
                                  (when (= "Enter" (.-key e))
-                                   (let [v (.. e -target -value)]
-                                     (server (add! v))
-                                     (set! (.. e -target -value) ""))))}]
+                                   (server (add! (client (.. e -target -value))))
+                                   (set! (.. e -target -value) "")))}]
      ;; `when` renders nil as a placeholder node rather than nothing, so the
      ;; player keeps its position and a patch elsewhere does not disturb it.
      (when current
