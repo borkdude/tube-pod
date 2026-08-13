@@ -4,7 +4,7 @@
             [babashka.process :as p]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [split.core :refer [defpart defsplit server]]
+            [split.core :refer [defpart defui server]]
             [split.server :as split]
             [tube-pod.feed :as feed]))
 
@@ -119,7 +119,7 @@
    (when error
      [:button.del {:on-click (fn [_] (server (dismiss! id)))} "×"])])
 
-(defsplit admin [playing]
+(defui admin [playing]
   (let [episodes (server (:library @state))
         running  (server (mapv (fn [[id j]] (assoc j :id id)) (:jobs @state)))
         total    (server (count (:library @state)))
