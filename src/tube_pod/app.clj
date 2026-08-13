@@ -3,11 +3,11 @@
             [babashka.http-server :as http-server]
             [babashka.nrepl.server :as nrepl]
             [babashka.process :as p]
+            [buzz.core :refer [client defpart defui server]]
+            [buzz.handler :as buzz]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [org.httpkit.server :as http]
-            [split.core :refer [client defpart defui server]]
-            [split.server :as split]
             [tube-pod.feed :as feed]))
 
 (def base-url (or (System/getenv "TUBE_POD_URL") "http://10.0.1.11:8088"))
@@ -142,7 +142,7 @@
 ;; the library and the download queue are shared, what is playing belongs to
 ;; whoever opened the panel
 (def ui
-  (split/handler {:index "public/index.html"
+  (buzz/handler {:index "public/index.html"
                   :watch [state]
                   :mounts [{:el "app"
                             :component (fn [_] (admin))}]}))

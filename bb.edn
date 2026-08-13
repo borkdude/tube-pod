@@ -1,7 +1,7 @@
 {:paths ["src"]
  :deps {org.babashka/http-server {:local/root "/Users/borkdude/dev/http-server"}
-        io.github.borkdude/split {:local/root "../scratch/scittle-split"}}
- :tasks {admin {:doc "Admin panel on 1341, podcast on 8088"
+        io.github.borkdude/buzz {:local/root "../buzz"}}
+ :tasks {admin {:doc "Admin panel and podcast on 8088"
                 :requires ([tube-pod.app :as app])
                 :task (app/-main)}
          dev   {:doc "Same, plus an nrepl on 1667"
