@@ -3,7 +3,7 @@
             [babashka.http-server :as http-server]
             [babashka.nrepl.server :as nrepl]
             [babashka.process :as p]
-            [buzz.core :refer [client defpart defui server server!]]
+            [buzz.core :refer [client defpart defui local-state server server!]]
             [buzz.handler :as buzz]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -98,7 +98,7 @@
       (sync!))))
 
 ;; `playing` is an ordinary parameter here: the atom is browser state, made by
-;; `(client nil)` in `admin`, so setting it redraws without asking the server.
+;; `(local-state nil)` in `admin`, so setting it redraws without asking the server.
 (defpart episode-row [{:keys [id title author duration added]} current playing]
   [:li.episode {:key id :class (when (= id current) "playing")}
    [:button.play {:on-click (fn [_] (reset! playing id))} "▶"]
@@ -118,7 +118,7 @@
   (let [episodes (server (:library @state))
         running  (server (mapv (fn [[id j]] (assoc j :id id)) (:jobs @state)))
         total    (server (count (:library @state)))
-        playing  (client nil)
+        playing  (local-state nil)
         current  @playing]
     [:div
      [:h1 "tube-pod"]
@@ -143,9 +143,9 @@
 ;; whoever opened the panel
 (def ui
   (buzz/handler {:index "public/index.html"
-                  :watch [state]
-                  :mounts [{:el "app"
-                            :component (fn [_] (admin))}]}))
+                 :watch [state]
+                 :mounts [{:el "app"
+                           :component (fn [_] (admin))}]}))
 
 ;; The panel takes the routes it owns, the feed and the audio come from
 ;; http-server, and this decides the order.
