@@ -10,11 +10,18 @@
             [org.httpkit.server :as http]
             [tube-pod.feed :as feed]))
 
+;; The address a podcast player uses. The panel runs here, the files live on the
+;; other end of `remote`, so this is that machine and not this one.
 (def base-url (or (System/getenv "TUBE_POD_URL") "http://10.0.1.11:8088"))
+
+;; An rsync destination, such as root@my-vps:/srv/tube-pod. Without it nothing
+;; is pushed and tube-pod serves its own files.
+(def remote (System/getenv "TUBE_POD_REMOTE"))
 
 (defonce state
   (atom {:library []    ; episodes on disk, newest first
-         :jobs {}}))   ; id -> {:url :status :error}
+         :jobs {}       ; id -> {:url :status :error}
+         :push nil}))   ; {:status :error} of the last push
 
 ;; http-server's router is an ordinary Ring handler that already does Range
 ;; requests, which podcast clients and <audio> both need. Reaching through the
@@ -37,12 +44,41 @@
      :duration (feed/hms duration)
      :added    (added file)}))
 
+;; One push at a time, in the background, so a handler never waits on an upload.
+;; An agent gives both: `send-off` queues, and the panel reads the result.
+(defonce ^:private pusher (agent nil))
+
+(defn- rsync [& args]
+  (apply p/shell {:continue true :err :string :out :string} "rsync" args))
+
+(defn- push-once [_]
+  (try
+    (swap! state assoc :push {:status "pushing"})
+    ;; Audio first. A feed that names a file the server does not have yet is
+    ;; worse than a feed that is a moment out of date.
+    (let [audio (rsync "-az" "--delete" (str feed/audio-dir "/") (str remote "/" feed/audio-dir "/"))
+          feed  (when (zero? (:exit audio))
+                  (rsync "-az" feed/feed-file (str remote "/")))
+          fail  (first (remove #(zero? (:exit %)) (remove nil? [audio feed])))]
+      (swap! state assoc :push
+             (if fail
+               {:status "failed" :error (last (remove str/blank? (str/split-lines (str (:err fail)))))}
+               {:status "ok"})))
+    (catch Exception e
+      (swap! state assoc :push {:status "failed" :error (ex-message e)})))
+  nil)
+
+(defn push! []
+  (when remote (send-off pusher push-once)))
+
 (defn sync!
   "ffprobe is slow enough to be worth doing once per change rather than per
-  render, so the library is cached and the feed rewritten at the same time."
+  render, so the library is cached and the feed rewritten at the same time.
+  The push happens after, in the background."
   []
   (swap! state assoc :library (mapv episode (feed/files)))
-  (feed/write! base-url))
+  (feed/write! base-url)
+  (push!))
 
 ;; yt-dlp is given its arguments as a vector and the url after `--`, so nothing
 ;; typed into the browser can become a flag or reach a shell.
@@ -118,6 +154,7 @@
   (let [episodes (server (:library @state))
         running  (server (mapv (fn [[id j]] (assoc j :id id)) (:jobs @state)))
         total    (server (count (:library @state)))
+        push     (server (:push @state))
         playing  (local-state nil)
         current  @playing]
     [:div
@@ -136,7 +173,10 @@
                        :autoplay true}])
      (when (seq running)
        [:ul.jobs (for [j running] (job-row j))])
-     [:p.count total " episodes · " [:a {:href "/feed.xml"} "feed.xml"]]
+     [:p.count total " episodes · " [:a {:href "/feed.xml"} "feed.xml"]
+      (when push
+        [:span {:class (when (= "failed" (:status push)) "failed")}
+         " · " (or (:error push) (:status push))])]
      [:ul.episodes (for [ep episodes] (episode-row ep current playing))]]))
 
 ;; the library and the download queue are shared, what is playing belongs to
