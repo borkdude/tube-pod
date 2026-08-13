@@ -97,12 +97,10 @@
       (fs/delete file)
       (sync!))))
 
-;; `playing` is not a parameter here. A part's parameters are client values, so
-;; passing the atom would bind it in the browser and ship it back. Server things
-;; are reached by name instead, from the scope this gets spliced into, which is
-;; `admin` below.
-#_{:clj-kondo/ignore [:unresolved-symbol]}
-(defpart episode-row [{:keys [id title author duration added]} current]
+;; `playing` is marked `^:server`, so it is substituted rather than bound in the
+;; browser. As an ordinary parameter the atom would land in browser scope and be
+;; shipped back as an rpc argument.
+(defpart episode-row [{:keys [id title author duration added]} current ^:server playing]
   [:li.episode {:key id :class (when (= id current) "playing")}
    [:button.play {:on-click (fn [_] (server (reset! playing id)))} "▶"]
    [:div.meta
@@ -140,7 +138,7 @@
      (when (seq running)
        [:ul.jobs (for [j running] (job-row j))])
      [:p.count total " episodes · " [:a {:href "/feed.xml"} "feed.xml"]]
-     [:ul.episodes (for [ep episodes] (episode-row ep current))]]))
+     [:ul.episodes (for [ep episodes] (episode-row ep current playing))]]))
 
 ;; the library and the download queue are shared, what is playing belongs to
 ;; whoever opened the panel
