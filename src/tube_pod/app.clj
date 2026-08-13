@@ -3,7 +3,7 @@
             [babashka.http-server :as http-server]
             [babashka.nrepl.server :as nrepl]
             [babashka.process :as p]
-            [buzz.core :refer [client defpart defui server]]
+            [buzz.core :refer [client defpart defui server server!]]
             [buzz.handler :as buzz]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -105,14 +105,14 @@
    [:div.meta
     [:span.title title]
     [:span.sub author " · " duration " · " added]]
-   [:button.del {:on-click (fn [_] (server (delete! (client id))))} "×"]])
+   [:button.del {:on-click (fn [_] (server! (delete! (client id))))} "×"]])
 
 (defpart job-row [{:keys [id url status error]}]
   [:li.job {:key id}
    [:span.status status]
    [:span.sub (or error url)]
    (when error
-     [:button.del {:on-click (fn [_] (server (dismiss! (client id))))} "×"])])
+     [:button.del {:on-click (fn [_] (server! (dismiss! (client id))))} "×"])])
 
 (defui admin []
   (let [episodes (server (:library @state))
@@ -126,7 +126,7 @@
                   :autofocus true
                   :on-key-down (fn [e]
                                  (when (= "Enter" (.-key e))
-                                   (server (add! (client (.. e -target -value))))
+                                   (server! (add! (client (.. e -target -value))))
                                    (set! (.. e -target -value) "")))}]
      ;; `when` renders nil as a placeholder node rather than nothing, so the
      ;; player keeps its position and a patch elsewhere does not disturb it.
