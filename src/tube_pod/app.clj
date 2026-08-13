@@ -1,9 +1,11 @@
 (ns tube-pod.app
   (:require [babashka.fs :as fs]
             [babashka.http-server :as http-server]
+            [babashka.nrepl.server :as nrepl]
             [babashka.process :as p]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [org.httpkit.server :as http]
             [split.core :refer [defpart defui server]]
             [split.server :as split]
             [tube-pod.feed :as feed]))
@@ -14,16 +16,12 @@
   (atom {:library []    ; episodes on disk, newest first
          :jobs {}}))   ; id -> {:url :status :error}
 
-;; http-server is http-kit too, and its router is an ordinary Ring handler that
-;; already does Range requests, which podcast clients and <audio> both need.
-;; Reaching through the var because it is private: making `file-router` public
-;; would turn this into a plain call.
+;; http-server's router is an ordinary Ring handler that already does Range
+;; requests, which podcast clients and <audio> both need. Reaching through the
+;; var because it is private: making `file-router` public would turn this into a
+;; plain call.
 (def ^:private files
   (#'http-server/file-router (fs/path ".") {}))
-
-(defn routes [req]
-  (when (re-matches #"/(feed\.xml|audio/.+)" (:uri req))
-    (files req)))
 
 (defn- added [file]
   (-> (fs/last-modified-time file)
@@ -144,15 +142,26 @@
      [:p.count total " episodes · " [:a {:href "/feed.xml"} "feed.xml"]]
      [:ul.episodes (for [ep episodes] (episode-row ep current))]]))
 
+;; the library and the download queue are shared, what is playing belongs to
+;; whoever opened the panel
+(def ui
+  (split/handler {:index "public/index.html"
+                  :watch [state]
+                  :mounts [{:el "app"
+                            :state (fn [] {:playing (atom nil)})
+                            :component (fn [{:keys [playing]}] (admin playing))}]}))
+
+;; The panel takes the routes it owns, the feed and the audio come from
+;; http-server, and this decides the order.
+(defn app [req]
+  (or (ui req) (files req)))
+
 (defn -main [& args]
   (sync!)
-  (println (str "feed: " base-url "/feed.xml"))
-  (split/start! {:port 8088
-                 :nrepl (when (some #{"--nrepl"} args) 1667)
-                 :routes routes
-                 ;; the library and the download queue are shared, what is
-                 ;; playing belongs to whoever opened the panel
-                 :watch [state]
-                 :mounts [{:el "app"
-                           :state (fn [] {:playing (atom nil)})
-                           :component (fn [{:keys [playing]}] (admin playing))}]}))
+  (http/run-server app {:port 8088})
+  (println "admin: http://localhost:8088")
+  (println (str "feed:  " base-url "/feed.xml"))
+  (when (some #{"--nrepl"} args)
+    (nrepl/start-server! {:port 1667})
+    (println "nrepl://localhost:1667"))
+  @(promise))
