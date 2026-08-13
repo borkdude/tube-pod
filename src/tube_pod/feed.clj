@@ -2,10 +2,13 @@
   (:require [babashka.fs :as fs]
             [babashka.process :refer [shell]]
             [cheshire.core :as json]
-            [clojure.string :as str]))
+            [clojure.data.xml :as xml]))
 
 (def audio-dir "audio")
 (def feed-file "feed.xml")
+
+(def itunes-ns "http://www.itunes.com/dtds/podcast-1.0.dtd")
+(xml/alias-uri 'itunes itunes-ns)
 
 (defn probe [file]
   (-> (shell {:out :string}
@@ -13,9 +16,6 @@
       :out
       (json/parse-string true)
       :format))
-
-(defn escape [s]
-  (str/escape (str s) {\& "&amp;" \< "&lt;" \> "&gt;" \" "&quot;" \' "&apos;"}))
 
 (defn pub-date [file]
   (-> (fs/last-modified-time file)
@@ -38,33 +38,33 @@
   (let [{:keys [tags duration size]} (probe file)
         {:keys [title artist synopsis comment]} tags
         name (fs/file-name file)]
-    (str "    <item>\n"
-         "      <title>" (escape title) "</title>\n"
-         "      <itunes:author>" (escape artist) "</itunes:author>\n"
-         "      <description>" (escape (str synopsis "\n\n" comment)) "</description>\n"
-         "      <link>" (escape comment) "</link>\n"
-         "      <guid isPermaLink=\"false\">" (escape (fs/strip-ext name)) "</guid>\n"
-         "      <pubDate>" (pub-date file) "</pubDate>\n"
-         "      <itunes:duration>" (hms duration) "</itunes:duration>\n"
-         "      <enclosure url=\"" base-url "/" audio-dir "/" name "\""
-         " length=\"" size "\" type=\"audio/x-m4a\"/>\n"
-         "    </item>\n")))
+    (xml/element
+     :item {}
+     (xml/element :title {} title)
+     (xml/element ::itunes/author {} artist)
+     (xml/element :description {} (str synopsis "\n\n" comment))
+     (xml/element :link {} comment)
+     (xml/element :guid {:isPermaLink "false"} (str (fs/strip-ext name)))
+     (xml/element :pubDate {} (pub-date file))
+     (xml/element ::itunes/duration {} (hms duration))
+     (xml/element :enclosure {:url (str base-url "/" audio-dir "/" name)
+                              :length (str size)
+                              :type "audio/x-m4a"}))))
 
 (defn feed [base-url files]
-  (str "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-       "<rss version=\"2.0\" xmlns:itunes=\"http://www.itunes.com/dtds/podcast-1.0.dtd\">\n"
-       "  <channel>\n"
-       "    <title>tube-pod</title>\n"
-       "    <link>" base-url "/" feed-file "</link>\n"
-       "    <description>Talks queued for offline listening.</description>\n"
-       "    <language>en</language>\n"
-       "    <itunes:author>tube-pod</itunes:author>\n"
-       "    <itunes:explicit>false</itunes:explicit>\n"
-       (str/join (map #(episode base-url %) files))
-       "  </channel>\n"
-       "</rss>\n"))
+  (xml/element
+   :rss {:version "2.0" :xmlns/itunes itunes-ns}
+   (xml/element
+    :channel {}
+    (xml/element :title {} "tube-pod")
+    (xml/element :link {} (str base-url "/" feed-file))
+    (xml/element :description {} "Talks queued for offline listening.")
+    (xml/element :language {} "en")
+    (xml/element ::itunes/author {} "tube-pod")
+    (xml/element ::itunes/explicit {} "false")
+    (map #(episode base-url %) files))))
 
 (defn write! [base-url]
   (let [fs (files)]
-    (spit feed-file (feed base-url fs))
+    (spit feed-file (xml/indent-str (feed base-url fs)))
     (count fs)))
