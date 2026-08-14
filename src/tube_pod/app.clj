@@ -199,7 +199,10 @@
 
 (defn -main [& args]
   (sync!)
-  (http/run-server app {:port 8088})
+  ;; The panel authenticates nobody, so it listens only on this machine. Without
+  ;; :ip http-kit takes every interface, which puts the handlers on whatever
+  ;; network the laptop is on.
+  (http/run-server app {:port 8088 :ip "127.0.0.1"})
   (println "admin: http://localhost:8088")
   (println (str "feed:  " base-url "/feed.xml"))
   (when (some #{"--nrepl"} args)
