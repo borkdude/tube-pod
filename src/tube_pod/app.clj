@@ -184,8 +184,7 @@
 (def ui
   (buzz/handler {:index "public/index.html"
                  :watch [state]
-                 :mounts [{:el "app"
-                           :component (fn [_] (admin))}]}))
+                 :mounts [{:el "app" :ui #'admin}]}))
 
 ;; The panel takes the routes it owns, and the feed and the audio come from
 ;; http-server. `files` serves the working directory, so it gets only these two
