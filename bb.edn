@@ -1,6 +1,6 @@
 {:paths ["src"]
  :deps {org.babashka/http-server {:mvn/version "0.1.14"}
-        io.github.borkdude/buzz {:git/sha "9e4d32d3cff294af67c620045c4020130f903381"}}
+        io.github.borkdude/buzz {:git/sha "d4de0802090e187f3c15fec306600d4063444f32"}}
  :tasks {admin {:doc "Admin panel and podcast on 8088"
                 :requires ([tube-pod.app :as app])
                 :task (app/-main)}

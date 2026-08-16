@@ -3,8 +3,7 @@
             [babashka.http-server :as http-server]
             [babashka.nrepl.server :as nrepl]
             [babashka.process :as p]
-            [buzz.core :refer [client defpart defui local-state server server!]]
-            [buzz.handler :as buzz]
+            [buzz.core :as buzz :refer [client defpart defui local-state server server!]]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [org.httpkit.server :as http]
@@ -184,8 +183,7 @@
 (def ui
   (buzz/handler {:index "public/index.html"
                  :watch [state]
-                 :mounts [{:el "app"
-                           :component (fn [_] (admin))}]}))
+                 :mounts [{:el "app" :ui #'admin}]}))
 
 ;; The panel takes the routes it owns, and the feed and the audio come from
 ;; http-server. `files` serves the working directory, so it gets only these two
