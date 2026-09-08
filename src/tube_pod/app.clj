@@ -157,7 +157,6 @@
   (let [episodes (server (buzz/observe state-source [:library]))
         running  (server (mapv (fn [[id j]] (assoc j :id id))
                                (buzz/observe state-source [:jobs])))
-        total    (server (count (buzz/observe state-source [:library])))
         push     (server (buzz/observe state-source [:push]))
         playing  (local-state nil)
         current  @playing]
@@ -177,7 +176,7 @@
                        :autoplay true}])
      (when (seq running)
        [:ul.jobs (for [j running] (job-row j))])
-     [:p.count total " episodes · " [:a {:href "/feed.xml"} "feed.xml"]
+     [:p.count (count episodes) " episodes · " [:a {:href "/feed.xml"} "feed.xml"]
       (when push
         [:span {:class (when (= "failed" (:status push)) "failed")}
          " · " (or (:error push) (:status push))])]
