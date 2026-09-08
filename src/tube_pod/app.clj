@@ -22,6 +22,10 @@
          :jobs {}       ; id -> {:url :status :error}
          :push nil}))   ; {:status :error} of the last push
 
+;; Each key is observed separately, so a download writing a progress line into
+;; :jobs several times a second does not re-run the library slots with it.
+(def state-source (buzz/atom-source state))
+
 ;; http-server's router is an ordinary Ring handler that already does Range
 ;; requests, which podcast clients and <audio> both need. Reaching through the
 ;; var because it is private: making `file-router` public would turn this into a
@@ -150,10 +154,11 @@
      [:button.del {:on-click (fn [_] (server! (dismiss! (client id))))} "×"])])
 
 (defui admin []
-  (let [episodes (server (:library @state))
-        running  (server (mapv (fn [[id j]] (assoc j :id id)) (:jobs @state)))
-        total    (server (count (:library @state)))
-        push     (server (:push @state))
+  (let [episodes (server (buzz/observe state-source [:library]))
+        running  (server (mapv (fn [[id j]] (assoc j :id id))
+                               (buzz/observe state-source [:jobs])))
+        total    (server (count (buzz/observe state-source [:library])))
+        push     (server (buzz/observe state-source [:push]))
         playing  (local-state nil)
         current  @playing]
     [:div
@@ -182,7 +187,6 @@
 ;; whoever opened the panel
 (def ui
   (buzz/handler {:index "public/index.html"
-                 :watch [state]
                  :mounts [{:el "app" :ui #'admin}]}))
 
 ;; The panel takes the routes it owns, and the feed and the audio come from
